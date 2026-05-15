@@ -1,7 +1,3 @@
-"""
-Data loading and validation module.
-Handles CSV/JSON file loading, column mapping, and data cleaning.
-"""
 from typing import Any, Dict, List, Optional, Tuple, Union
 import pandas as pd
 import json
@@ -15,12 +11,7 @@ from utils.validators import (
 )
 
 
-class DataLoader:
-    """
-    Data loader class for loading and validating metrological equipment data.
-    Implements singleton pattern for consistent data access.
-    """
-    
+class DataLoader: 
     _instance = None
     _data: Optional[pd.DataFrame] = None
     
@@ -35,46 +26,31 @@ class DataLoader:
     
     @property
     def data(self) -> Optional[pd.DataFrame]:
-        """Get the loaded data."""
         return self._data
     
     @property
     def last_error(self) -> Optional[str]:
-        """Get the last error message."""
         return self._last_error
     
     def load_csv(self, filepath: str) -> bool:
-        """
-        Load data from CSV file.
-        
-        Args:
-            filepath: Path to CSV file
-            
-        Returns:
-            True if successful, False otherwise
-        """
         try:
             if not os.path.exists(filepath):
                 self._last_error = f"File not found: {filepath}"
                 return False
             
             df = pd.read_csv(filepath)
+
             return self._process_dataframe(df)
+
+        except PermissionError as e:
+            self._last_error = f"Permission error loading CSV: {str(e)}. Файл может быть занят другим процессом."
+            return False
             
         except Exception as e:
             self._last_error = f"Error loading CSV: {str(e)}"
             return False
     
     def load_json(self, filepath: str) -> bool:
-        """
-        Load data from JSON file.
-        
-        Args:
-            filepath: Path to JSON file
-            
-        Returns:
-            True if successful, False otherwise
-        """
         try:
             if not os.path.exists(filepath):
                 self._last_error = f"File not found: {filepath}"
@@ -98,15 +74,6 @@ class DataLoader:
             return False
     
     def load_from_dict(self, data_dict: Dict[str, Union[List, Any]]) -> bool:
-        """
-        Load data from dictionary.
-        
-        Args:
-            data_dict: Dictionary with column names as keys and lists/values as values
-            
-        Returns:
-            True if successful, False otherwise
-        """
         try:
             if all(isinstance(v, list) for v in data_dict.values()):
                 df = pd.DataFrame(data_dict)
@@ -120,27 +87,15 @@ class DataLoader:
             return False
     
     def _process_dataframe(self, df: pd.DataFrame) -> bool:
-        """
-        Process and validate DataFrame.
-        
-        Args:
-            df: Raw DataFrame
-            
-        Returns:
-            True if successful, False otherwise
-        """
         try:
-            # Clean the data
             df_clean = clean_dataframe(df)
             
             if df_clean.empty:
                 self._last_error = "DataFrame is empty after cleaning"
                 return False
             
-            # Map columns if needed
             df_mapped = self._map_columns(df_clean)
             
-            # Validate structure
             required_cols = ['price', 'accuracy', 'digital_display', 
                            'temperature_range', 'weight', 'sales']
             is_valid, error_msg = validate_dataframe_structure(df_mapped, required_cols)
@@ -149,7 +104,6 @@ class DataLoader:
                 self._last_error = error_msg
                 return False
             
-            # Detect column types
             col_types = detect_column_types(df_mapped)
             
             self._data = df_mapped
@@ -161,15 +115,6 @@ class DataLoader:
             return False
     
     def _map_columns(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Map original column names to standard names.
-        
-        Args:
-            df: DataFrame with original column names
-            
-        Returns:
-            DataFrame with mapped column names
-        """
         df_mapped = df.copy()
         
         for orig_col, std_col in self._column_mapping.items():
@@ -179,19 +124,16 @@ class DataLoader:
         return df_mapped
     
     def get_numeric_columns(self) -> List[str]:
-        """Get list of numeric columns."""
         if self._data is None:
             return []
         return self._data.select_dtypes(include=['int64', 'float64']).columns.tolist()
     
     def get_categorical_columns(self) -> List[str]:
-        """Get list of categorical columns."""
         if self._data is None:
             return []
         return self._data.select_dtypes(include=['object', 'category', 'bool']).columns.tolist()
     
     def get_data_summary(self) -> Dict[str, any]:
-        """Get summary statistics of loaded data."""
         if self._data is None:
             return {}
         
@@ -205,22 +147,11 @@ class DataLoader:
         }
     
     def clear_data(self):
-        """Clear loaded data."""
         self._data = None
         self._last_error = None
 
 
 def create_sample_dataset(filepath: str, n_samples: int = 100) -> bool:
-    """
-    Create a sample dataset for testing.
-    
-    Args:
-        filepath: Path to save the dataset
-        n_samples: Number of samples to generate
-        
-    Returns:
-        True if successful, False otherwise
-    """
     try:
         import numpy as np
         

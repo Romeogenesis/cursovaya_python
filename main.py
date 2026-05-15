@@ -2,7 +2,8 @@
 Main entry point for the Metrological Equipment Analysis System.
 Run with: streamlit run main.py
 """
-from ui.dashboard import main
+import streamlit as st
+from ui.dashboard import main as dashboard_main
 
 if __name__ == "__main__":
-    main()
+    dashboard_main()
