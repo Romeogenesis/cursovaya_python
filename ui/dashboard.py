@@ -287,7 +287,7 @@ def render_forecast_tab(data_loader: DataLoader):
 
 
 def render_resources_tab(data_loader: DataLoader):
-    st.header("🔧 Оптимизация")
+    st.header("🔧 Оптимизация закупок")
     data = data_loader.data
     if data is None or data.empty: st.warning("⚠️ Загрузите данные"); return
     
@@ -343,17 +343,263 @@ def render_resources_tab(data_loader: DataLoader):
                 st.plotly_chart(fig, use_container_width=True)
 
 
+def render_transport_tab():
+    st.header("🚚 Оптимизация")
+    st.markdown("""
+    **Распределение метрологического оборудования от заводов M1–M3 к лабораториям Lab1–Lab4**
+    
+    Цель: минимизация затрат на производство и логистику при соблюдении мощностей заводов и полного удовлетворения спроса лабораторий.
+    """)
+    
+    optimizer = ResourceOptimizer()
+    
+    tab1, tab2 = st.tabs(["📊 Быстрый ввод (по варианту 29)", "⚙️ Произвольные данные"])
+    
+    with tab1:
+        st.subheader("Данные по варианту №29")
+        
+        default_costs = np.array([
+            [250, 280, 320, 350],
+            [300, 260, 290, 330],
+            [360, 320, 270, 310]
+        ])
+        
+        default_supply = np.array([400, 350, 300])
+        default_demand = np.array([200, 250, 300, 150])
+        
+        st.write("**Матрица затрат (тыс. руб./ед.):**")
+        costs_df = pd.DataFrame(
+            default_costs,
+            index=['M1', 'M2', 'M3'],
+            columns=['Lab1', 'Lab2', 'Lab3', 'Lab4']
+        )
+        st.dataframe(costs_df.style.format("{:.0f}"), use_container_width=True)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("**Мощности заводов (ед./год):**")
+            supply_df = pd.DataFrame({
+                'Завод': ['M1', 'M2', 'M3'],
+                'Мощность': default_supply
+            })
+            st.dataframe(supply_df, use_container_width=True)
+        
+        with col2:
+            st.write("**Спрос лабораторий (ед./год):**")
+            demand_df = pd.DataFrame({
+                'Лаборатория': ['Lab1', 'Lab2', 'Lab3', 'Lab4'],
+                'Спрос': default_demand
+            })
+            st.dataframe(demand_df, use_container_width=True)
+        
+        if st.button("🚀 Решить транспортную задачу (Вариант 29)", type="primary", key="solve_default"):
+            solve_and_display_transport(optimizer, default_costs, default_supply, default_demand)
+    
+    with tab2:
+        st.subheader("Произвольные данные")
+        
+        n_plants = st.number_input("Количество заводов", min_value=2, max_value=5, value=3, key="n_plants")
+        n_labs = st.number_input("Количество лабораторий", min_value=2, max_value=6, value=4, key="n_labs")
+        
+        st.write("**Матрица затрат (тыс. руб./ед.):**")
+        costs_input = []
+        for i in range(n_plants):
+            row = []
+            cols = st.columns(n_labs)
+            for j in range(n_labs):
+                val = cols[j].number_input(
+                    f"M{i+1}→Lab{j+1}",
+                    min_value=0.0,
+                    value=float(200 + i*50 + j*30),
+                    key=f"cost_{i}_{j}"
+                )
+                row.append(val)
+            costs_input.append(row)
+        
+        costs_custom = np.array(costs_input)
+        
+        st.write("**Мощности заводов:**")
+        supply_input = []
+        for i in range(n_plants):
+            val = st.number_input(
+                f"Завод M{i+1}",
+                min_value=0,
+                value=300 + i*50,
+                key=f"supply_{i}"
+            )
+            supply_input.append(val)
+        
+        supply_custom = np.array(supply_input)
+        
+        st.write("**Спрос лабораторий:**")
+        demand_input = []
+        for j in range(n_labs):
+            val = st.number_input(
+                f"Лаборатория Lab{j+1}",
+                min_value=0,
+                value=200 + j*50,
+                key=f"demand_{j}"
+            )
+            demand_input.append(val)
+        
+        demand_custom = np.array(demand_input)
+        
+        if st.button("🚀 Решить транспортную задачу", type="primary", key="solve_custom"):
+            solve_and_display_transport(optimizer, costs_custom, supply_custom, demand_custom)
+
+
+def solve_and_display_transport(optimizer: ResourceOptimizer, costs: np.ndarray, 
+                                 supply: np.ndarray, demand: np.ndarray):
+    
+    with st.spinner("⏳ Решение транспортной задачи..."):
+        result_df, error = optimizer.solve_transport_problem(costs, supply, demand)
+        
+        if error:
+            st.error(f"❌ Ошибка: {error}")
+            return
+        
+        st.success("✅ Задача успешно решена!")
+        
+        st.subheader("📈 Результаты оптимизации")
+        opt_result = optimizer.get_optimization_summary()
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric(
+                "📦 Минимальные затраты",
+                f"{opt_result.get('total_cost', 0):,} тыс. руб.",
+                delta="Оптимально"
+            )
+        with col2:
+            total_supply = sum(supply)
+            used_supply = sum(result_df['Объём_поставки']) if 'Объём_поставки' in result_df.columns else 0
+            st.metric(
+                "🏭 Использовано мощностей",
+                f"{used_supply} из {total_supply} ед.",
+                delta=f"{used_supply/total_supply*100:.1f}%" if total_supply > 0 else "0%"
+            )
+        with col3:
+            total_demand = sum(demand)
+            st.metric(
+                "🔬 Удовлетворён спрос",
+                f"{total_demand} ед.",
+                delta="100%"
+            )
+        
+        st.divider()
+        
+        st.subheader("📋 Оптимальный план перевозок")
+        
+        plants = ['M1', 'M2', 'M3'][:len(supply)]
+        labs = ['Lab1', 'Lab2', 'Lab3', 'Lab4'][:len(demand)]
+        
+        transport_matrix = np.zeros((len(plants), len(labs)))
+        for _, row in result_df.iterrows():
+            i = plants.index(row['Завод'])
+            j = labs.index(row['Лаборатория'])
+            transport_matrix[i, j] = row['Объём_поставки']
+        
+        transport_df = pd.DataFrame(
+            transport_matrix,
+            index=plants,
+            columns=labs
+        )
+        
+        st.dataframe(transport_df, use_container_width=True)
+        
+        st.write("**Детализация перевозок:**")
+        st.dataframe(
+            result_df.style.format({
+                'Стоимость_ед': '{:.0f}',
+                'Затраты': '{:.0f}'
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        st.divider()
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📊 Структура затрат")
+            
+            if not result_df.empty:
+                fig_pie = px.pie(
+                    result_df,
+                    values='Затраты',
+                    names='Завод',
+                    title='Распределение затрат по заводам',
+                    hole=0.4
+                )
+                st.plotly_chart(fig_pie, use_container_width=True)
+        
+        with col2:
+            st.subheader("📦 Объёмы поставок")
+            
+            if not result_df.empty:
+                fig_bar = px.bar(
+                    result_df,
+                    x='Лаборатория',
+                    y='Объём_поставки',
+                    color='Завод',
+                    title='Распределение поставок по лабораториям',
+                    barmode='stack'
+                )
+                st.plotly_chart(fig_bar, use_container_width=True)
+        
+        st.subheader("🗺️ Тепловая карта оптимальных перевозок")
+        
+        fig_heatmap = go.Figure(data=go.Heatmap(
+            z=transport_matrix,
+            x=labs,
+            y=plants,
+            colorscale='YlGnBu',
+            text=transport_matrix.astype(int),
+            texttemplate="%{text}",
+            textfont={"size": 12},
+            colorbar=dict(title="Ед.")
+        ))
+        
+        fig_heatmap.update_layout(
+            title='Матрица оптимальных перевозок',
+            xaxis_title='Лаборатории',
+            yaxis_title='Заводы'
+        )
+        
+        st.plotly_chart(fig_heatmap, use_container_width=True)
+        
+        st.divider()
+        st.subheader("📥 Экспорт результатов")
+        
+        csv_data = result_df.to_csv(index=False, sep=';', decimal=',')
+        st.download_button(
+            label="📥 Скачать результаты (.csv)",
+            data=csv_data,
+            file_name="transport_optimization_result.csv",
+            mime="text/csv"
+        )
+
+
 def main():
     st.set_page_config(page_title="🏭 Метрологическое оборудование", page_icon="📊", layout="wide")
     st.title("🏭 ИАС: Производитель метрологического оборудования")
     
     data_loader = DataLoader()
     
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Данные", "🎯 Тех. уровень", "📈 Прогноз", "🔧 Ресурсы"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📊 Данные", 
+        "🎯 Тех. уровень", 
+        "📈 Прогноз", 
+        "🔧 Ресурсы",
+        "🚚 Транспортная задача"
+    ])
+    
     with tab1: render_data_tab(data_loader)
     with tab2: render_technical_level_tab(data_loader)
     with tab3: render_forecast_tab(data_loader)
     with tab4: render_resources_tab(data_loader)
+    with tab5: render_transport_tab()
     
     st.markdown("---")
     st.caption("Курсовая работа • Вариант №29 • РУТ (МИИТ) • 2026")

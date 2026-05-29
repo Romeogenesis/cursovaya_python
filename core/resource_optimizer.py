@@ -11,6 +11,87 @@ class ResourceOptimizer:
     def __init__(self):
         self._last_error: Optional[str] = None
         self._optimization_result: Optional[Dict] = None
+
+    def solve_transport_problem(
+    self,
+    costs: np.ndarray,      
+    supply: np.ndarray,     
+    demand: np.ndarray      
+) -> Tuple[pd.DataFrame, Optional[str]]:
+   
+        try:
+            m, n = costs.shape  
+            
+            
+            c = costs.flatten()
+            
+          
+            A_eq = []
+            b_eq = []
+            for j in range(n):  
+                row = np.zeros(m * n)
+                row[j::n] = 1   
+                A_eq.append(row)
+                b_eq.append(demand[j])
+            
+            A_ub = []
+            b_ub = []
+            for i in range(m):  
+                row = np.zeros(m * n)
+                row[i*n:(i+1)*n] = 1  
+                A_ub.append(row)
+                b_ub.append(supply[i])
+            
+        
+            bounds = [(0, None)] * (m * n)
+            
+            
+            result = linprog(
+                c=c,
+                A_ub=np.array(A_ub), b_ub=np.array(b_ub),
+                A_eq=np.array(A_eq), b_eq=np.array(b_eq),
+                bounds=bounds,
+                method='highs'
+            )
+            
+            if not result.success:
+                self._last_error = f"Оптимизация не сошлась: {result.message}"
+                return pd.DataFrame(), self._last_error
+            
+            
+            x_opt = result.x.reshape(m, n)
+            
+      
+            plants = ['M1', 'M2', 'M3']
+            labs = ['Lab1', 'Lab2', 'Lab3', 'Lab4']
+            
+            records = []
+            for i in range(m):
+                for j in range(n):
+                    if x_opt[i, j] > 0.5:  
+                        records.append({
+                            'Завод': plants[i],
+                            'Лаборатория': labs[j],
+                            'Объём_поставки': int(round(x_opt[i, j])),
+                            'Стоимость_ед': costs[i, j],
+                            'Затраты': int(round(x_opt[i, j] * costs[i, j]))
+                        })
+            
+            result_df = pd.DataFrame(records)
+            
+            
+            self._optimization_result = {
+                'total_cost': int(round(result.fun)),
+                'matrix': x_opt,
+                'plants': plants,
+                'labs': labs
+            }
+            
+            return result_df, None
+        
+        except Exception as e:
+            self._last_error = f"Ошибка в транспортной задаче: {str(e)}"
+            return pd.DataFrame(), self._last_error
     
     def optimize_procurement(
         self,

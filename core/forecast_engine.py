@@ -43,6 +43,7 @@ class LinearRegressionStrategy(RegressionStrategy):
             'r2': r2_score(y, y_pred),
             'mse': mean_squared_error(y, y_pred),
             'rmse': np.sqrt(mean_squared_error(y, y_pred))
+            
         }
     
     def get_coefficients(self) -> np.ndarray:
@@ -71,6 +72,7 @@ class PolynomialRegressionStrategy(RegressionStrategy):
     
     def get_metrics(self, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
         y_pred = self.predict(X)
+        print(np.sqrt(mean_squared_error(y, y_pred)))
         return {
             'r2': r2_score(y, y_pred),
             'mse': mean_squared_error(y, y_pred),
